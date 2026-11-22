@@ -944,11 +944,16 @@ body.opened.scrolling .fabs{opacity:.4;transition-duration:.25s}
   }
 
   var music = {el:null, gen:null, muted:false, playing:false, vol:.55};
+  function volSettable(a){ try{ a.volume = .5; return Math.abs(a.volume - .5) < .01; }catch(e){ return false; } }
   function musicPrepare(){
     try{
-      var a = new Audio('music.mp3'); a.loop = true; a.preload = 'auto'; a.volume = 0; music.el = a;
+      var a = new Audio('music.mp3'); a.loop = true; a.preload = 'auto'; music.el = a;
+      music.canVol = volSettable(a);                   // iPhone Safari keeps .volume fixed at 1 (read-only), so it cannot fade or mute that way
       a.addEventListener('error', function(){ if (music.el === a) music.el = null; });
-      var p = a.play(); if (p && p.catch) p.catch(function(){ if (music.el === a) music.el = null; });
+      var p;
+      if (music.canVol){ a.volume = 0; p = a.play(); }
+      else { p = a.play(); if (p && p.then) p.then(function(){ if (!music.playing){ try{ a.pause(); }catch(e){} } }); }   // unlock inside the tap, start for real when the doors open
+      if (p && p.catch) p.catch(function(){ if (music.el === a) music.el = null; });
     }catch(e){ music.el = null; }
   }
   function fadeEl(a, to, ms){
@@ -984,7 +989,11 @@ body.opened.scrolling .fabs{opacity:.4;transition-duration:.25s}
   }
   function musicStart(){
     if (music.playing) return; music.playing = true;
-    if (music.el){ try{ music.el.currentTime = 0; }catch(e){} if (!music.muted) fadeEl(music.el, music.vol, 4000); }
+    if (music.el){
+      try{ music.el.currentTime = 0; }catch(e){}
+      if (music.canVol){ if (!music.muted) fadeEl(music.el, music.vol, 4000); }
+      else if (!music.muted){ var pp = music.el.play(); if (pp && pp.catch) pp.catch(function(){}); }
+    }
     else startGenerated();
   }
   function musicStop(){
@@ -995,7 +1004,11 @@ body.opened.scrolling .fabs{opacity:.4;transition-duration:.25s}
   function applyMute(){
     var mb = document.getElementById('mute');
     mb.classList.toggle('off', music.muted); mb.setAttribute('aria-pressed', String(music.muted)); mb.setAttribute('aria-label', music.muted ? 'Unmute music' : 'Mute music');
-    if (music.el) fadeEl(music.el, music.muted ? 0 : music.vol, 400);
+    if (music.el){
+      if (music.canVol) fadeEl(music.el, music.muted ? 0 : music.vol, 400);
+      else if (music.muted){ music.el.muted = true; try{ music.el.pause(); }catch(e){} }                      // iPhone: really pause it
+      else { music.el.muted = false; var pl = music.el.play(); if (pl && pl.catch) pl.catch(function(){}); }   // and resume on the tap
+    }
     if (music.gen && AC) music.gen.bus.gain.linearRampToValueAtTime(music.muted ? 0 : .9, AC.currentTime+.4);
   }
   document.getElementById('mute').addEventListener('click', function(){ music.muted = !music.muted; applyMute(); });
