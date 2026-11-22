@@ -957,8 +957,8 @@ body.opened.scrolling .fabs{opacity:.4;transition-duration:.25s}
     }catch(e){ music.el = null; }
   }
   function fadeEl(a, to, ms){
-    var from = a.volume, t0 = performance.now();
-    (function step(n){ var k = Math.min(1,(n-t0)/ms); a.volume = Math.max(0, Math.min(1, from+(to-from)*k)); if (k<1) requestAnimationFrame(step); })(t0);
+    var from = a.volume, t0 = performance.now(), id = a.__fid = (a.__fid || 0) + 1;     // a newer fade cancels an older one
+    (function step(n){ if (a.__fid !== id) return; var k = Math.min(1,(n-t0)/ms); a.volume = Math.max(0, Math.min(1, from+(to-from)*k)); if (k<1) requestAnimationFrame(step); })(t0);
   }
   function startGenerated(){
     if (!AC) return;
@@ -1006,10 +1006,15 @@ body.opened.scrolling .fabs{opacity:.4;transition-duration:.25s}
     mb.classList.toggle('off', music.muted); mb.setAttribute('aria-pressed', String(music.muted)); mb.setAttribute('aria-label', music.muted ? 'Unmute music' : 'Mute music');
     if (music.el){
       if (music.canVol) fadeEl(music.el, music.muted ? 0 : music.vol, 400);
-      else if (music.muted){ music.el.muted = true; try{ music.el.pause(); }catch(e){} }                      // iPhone: really pause it
-      else { music.el.muted = false; var pl = music.el.play(); if (pl && pl.catch) pl.catch(function(){}); }   // and resume on the tap
+      else {                                                                  // iPhone: volume is locked, but "muted" always works - no pause/play needed
+        music.el.muted = music.muted;
+        if (!music.muted && music.el.paused){ var pl = music.el.play(); if (pl && pl.catch) pl.catch(function(){}); }
+      }
     }
-    if (music.gen && AC) music.gen.bus.gain.linearRampToValueAtTime(music.muted ? 0 : .9, AC.currentTime+.4);
+    if (music.gen && AC){                                                     // generated fallback music: clear older ramps first, then fade
+      var g = music.gen.bus.gain, n = AC.currentTime;
+      try{ g.cancelScheduledValues(n); g.setValueAtTime(g.value, n); g.linearRampToValueAtTime(music.muted ? 0 : .9, n + .35); }catch(e){ g.value = music.muted ? 0 : .9; }
+    }
   }
   document.getElementById('mute').addEventListener('click', function(){ music.muted = !music.muted; applyMute(); });
   document.addEventListener('visibilitychange', function(){
